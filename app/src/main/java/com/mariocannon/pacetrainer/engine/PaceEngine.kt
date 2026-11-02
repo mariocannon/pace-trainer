@@ -22,6 +22,12 @@ data class PaceReading(
     val speedMps: Double?,
     val paceSecPerKm: Double?,
     val accuracyM: Float?,
+    /** Debug: window-average Doppler speed the phone reported, if any. */
+    val dopplerMps: Double? = null,
+    /** Debug: window speed from GPS positions (path distance / time). */
+    val distanceMps: Double? = null,
+    /** Debug: true once Doppler speed was judged broken and positions are used instead. */
+    val usingDistance: Boolean = false,
 )
 
 /**
@@ -29,8 +35,9 @@ data class PaceReading(
  *
  * - Fixes worse than [maxAccuracyM] are dropped.
  * - NO_GPS until [fixesToLock] consecutive good fixes; lock is lost after [lockTimeoutMs] with no good fix.
- * - Speed = average over a rolling [windowMs] window (Doppler speed if every fix has it, else haversine
- *   distance / time), then an EMA on top.
+ * - Speed = average over a rolling [windowMs] window, then an EMA on top. Doppler speed is preferred, but
+ *   some phones report it stuck at ~0 while moving: if Doppler says stopped while the positions show
+ *   steady movement for 10+ s, Doppler is ignored for the rest of the run and position distance is used.
  * - Below [stoppedBelowMps] the status is STOPPED.
  */
 class PaceEngine(
@@ -47,6 +54,9 @@ class PaceEngine(
     private var lastGoodMs: Long? = null
     private var smoothed: Double? = null
     private var lastAccuracy: Float? = null
+    private var dopplerUntrusted = false
+    private var lastDoppler: Double? = null
+    private var lastDistance: Double? = null
 
     fun reset() {
         window.clear()
@@ -55,6 +65,9 @@ class PaceEngine(
         lastGoodMs = null
         smoothed = null
         lastAccuracy = null
+        dopplerUntrusted = false
+        lastDoppler = null
+        lastDistance = null
     }
 
     fun onFix(fix: GpsFix): PaceReading {
@@ -102,9 +115,27 @@ class PaceEngine(
 
     private fun rawSpeed(): Double? {
         if (window.isEmpty()) return null
-        if (window.all { it.speedMps != null }) {
-            return window.map { it.speedMps!!.toDouble() }.average()
+        val doppler = dopplerSpeed()
+        val distance = distanceSpeed()
+        lastDoppler = doppler
+        lastDistance = distance
+
+        if (doppler != null && !dopplerUntrusted && doppler < stoppedBelowMps) {
+            val spanMs = window.last().timeMs - window.first().timeMs
+            val displacement = haversineM(window.first(), window.last())
+            if (spanMs >= 10_000 && displacement / (spanMs / 1000.0) > 1.0) dopplerUntrusted = true
         }
+        return if (doppler != null && !dopplerUntrusted) doppler else distance
+    }
+
+    /** Average Doppler speed, only if every fix in the window has one. */
+    private fun dopplerSpeed(): Double? {
+        if (!window.all { it.speedMps != null }) return null
+        return window.map { it.speedMps!!.toDouble() }.average()
+    }
+
+    /** Path distance over the window divided by elapsed time; needs at least 2 s of fixes. */
+    private fun distanceSpeed(): Double? {
         if (window.size < 2) return null
         val spanMs = window.last().timeMs - window.first().timeMs
         if (spanMs < 2_000) return null
@@ -115,9 +146,12 @@ class PaceEngine(
 
     private fun current(): PaceReading {
         val s = smoothed
-        if (!locked || s == null) return PaceReading(GpsStatus.NO_GPS, null, null, lastAccuracy)
-        if (s < stoppedBelowMps) return PaceReading(GpsStatus.STOPPED, s, null, lastAccuracy)
-        return PaceReading(GpsStatus.MOVING, s, 1000.0 / s, lastAccuracy)
+        val reading = when {
+            !locked || s == null -> PaceReading(GpsStatus.NO_GPS, null, null, lastAccuracy)
+            s < stoppedBelowMps -> PaceReading(GpsStatus.STOPPED, s, null, lastAccuracy)
+            else -> PaceReading(GpsStatus.MOVING, s, 1000.0 / s, lastAccuracy)
+        }
+        return reading.copy(dopplerMps = lastDoppler, distanceMps = lastDistance, usingDistance = dopplerUntrusted)
     }
 }
 

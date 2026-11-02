@@ -101,6 +101,26 @@ class PaceEngineTest {
     }
 
     @Test
+    fun dopplerStuckAtZeroFallsBackToPositions() {
+        val e = PaceEngine()
+        val degPerSec = PACE_5_00 / metresPerDegLat
+        var r: PaceReading? = null
+        for (t in 0..30) r = e.onFix(fix(t, speed = 0f, lat = startLat + t * degPerSec))
+        assertEquals(GpsStatus.MOVING, r!!.status)
+        assertEquals(true, r.usingDistance)
+        assertEquals(300.0, r.paceSecPerKm!!, 10.0)
+    }
+
+    @Test
+    fun dopplerZeroWhileStandingStillStaysStopped() {
+        val e = PaceEngine()
+        var r: PaceReading? = null
+        for (t in 0..30) r = e.onFix(fix(t, speed = 0f))
+        assertEquals(GpsStatus.STOPPED, r!!.status)
+        assertEquals(false, r.usingDistance)
+    }
+
+    @Test
     fun formatsPace() {
         assertEquals("5:00", formatPace(300.0))
         assertEquals("5:05", formatPace(305.4))

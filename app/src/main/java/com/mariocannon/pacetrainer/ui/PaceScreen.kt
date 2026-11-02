@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mariocannon.pacetrainer.engine.GpsStatus
 import com.mariocannon.pacetrainer.engine.NO_PACE
+import com.mariocannon.pacetrainer.engine.PaceReading
 import com.mariocannon.pacetrainer.engine.formatPace
 import com.mariocannon.pacetrainer.service.PaceUiState
 import kotlin.math.roundToInt
@@ -110,5 +111,19 @@ private fun LivePace(state: PaceUiState) {
         )
         Text("/km", style = MaterialTheme.typography.titleMedium)
         Text(status, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 12.dp))
+        if (state.running && reading != null) {
+            Text(
+                text = debugLine(reading),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
     }
+}
+
+private fun debugLine(r: PaceReading): String {
+    fun f(v: Double?) = v?.let { ((it * 10).roundToInt() / 10.0).toString() } ?: "–"
+    val source = if (r.usingDistance || r.dopplerMps == null) "using position" else "using doppler"
+    return "doppler ${f(r.dopplerMps)} · position ${f(r.distanceMps)} m/s · $source"
 }
