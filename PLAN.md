@@ -4,8 +4,8 @@ Lightweight Android app for running pace training. You set a target km pace; the
 
 ## Status
 - [x] Requirements and architecture agreed
-- [ ] GitHub repo created
-- [ ] M1 – Service + GPS + pace in notification
+- [x] GitHub repo created (mariocannon/pace-trainer)
+- [ ] M1 – Service + GPS + pace in notification (code written, needs a CI build and a screen-locked test walk/run)
 - [ ] M2 – Click engine + cue logic + music ducking
 - [ ] M3 – Settings screen + pace picker
 - [ ] M4 – Battery optimisation prompt + polish
