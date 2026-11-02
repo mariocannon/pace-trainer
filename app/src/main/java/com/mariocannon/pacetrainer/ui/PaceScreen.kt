@@ -17,9 +17,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mariocannon.pacetrainer.engine.Cue
 import com.mariocannon.pacetrainer.engine.GpsStatus
 import com.mariocannon.pacetrainer.engine.NO_PACE
 import com.mariocannon.pacetrainer.engine.PaceReading
@@ -99,7 +101,20 @@ private fun LivePace(state: PaceUiState) {
         reading == null || reading.status == GpsStatus.NO_GPS ->
             "Waiting for GPS…" + (accuracy?.let { " ($it)" } ?: "")
         reading.status == GpsStatus.STOPPED -> "Stopped" + (accuracy?.let { " · $it" } ?: "")
-        else -> accuracy ?: ""
+        else -> when (state.cue) {
+            Cue.ON_PACE -> "On pace"
+            Cue.TOO_SLOW -> "Speed up"
+            Cue.TOO_FAST -> "Ease off"
+            else -> "Settling…"
+        } + (accuracy?.let { " · $it" } ?: "")
+    }
+
+    val paceColor = when {
+        !moving -> MaterialTheme.colorScheme.onSurfaceVariant
+        state.cue == Cue.ON_PACE -> OnPaceGreen
+        state.cue == Cue.TOO_SLOW -> TooSlowAmber
+        state.cue == Cue.TOO_FAST -> TooFastBlue
+        else -> MaterialTheme.colorScheme.onBackground
     }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -107,7 +122,7 @@ private fun LivePace(state: PaceUiState) {
             text = if (moving) formatPace(pace!!) else NO_PACE,
             fontSize = 96.sp,
             fontWeight = FontWeight.Bold,
-            color = if (moving) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = paceColor,
         )
         Text("/km", style = MaterialTheme.typography.titleMedium)
         Text(status, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 12.dp))
@@ -121,6 +136,10 @@ private fun LivePace(state: PaceUiState) {
         }
     }
 }
+
+private val OnPaceGreen = Color(0xFF2E9E5B)
+private val TooSlowAmber = Color(0xFFE0A100)
+private val TooFastBlue = Color(0xFF2F7DE1)
 
 private fun debugLine(r: PaceReading): String {
     fun f(v: Double?) = v?.let { ((it * 10).roundToInt() / 10.0).toString() } ?: "–"

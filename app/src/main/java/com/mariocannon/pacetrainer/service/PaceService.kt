@@ -20,6 +20,9 @@ import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import com.mariocannon.pacetrainer.MainActivity
 import com.mariocannon.pacetrainer.R
+import com.mariocannon.pacetrainer.audio.ClickPlayer
+import com.mariocannon.pacetrainer.engine.Cue
+import com.mariocannon.pacetrainer.engine.CueEngine
 import com.mariocannon.pacetrainer.engine.GpsFix
 import com.mariocannon.pacetrainer.engine.GpsStatus
 import com.mariocannon.pacetrainer.engine.PaceEngine
@@ -44,6 +47,8 @@ class PaceService : Service(), LocationListener {
     private lateinit var locationManager: LocationManager
     private lateinit var notificationManager: NotificationManager
     private val engine = PaceEngine()
+    private val cueEngine = CueEngine()
+    private var clickPlayer: ClickPlayer? = null
 
     private var thread: HandlerThread? = null
     private var handler: Handler? = null
@@ -79,7 +84,7 @@ class PaceService : Service(), LocationListener {
     }
 
     private fun startRun() {
-        val notification = buildNotification(notificationText(null))
+        val notification = buildNotification(notificationText(null, Cue.SILENT))
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
@@ -93,6 +98,8 @@ class PaceService : Service(), LocationListener {
 
         running = true
         engine.reset()
+        cueEngine.reset(SystemClock.elapsedRealtime())
+        clickPlayer = ClickPlayer(this)
         PaceStateHolder.setRunning(true)
 
         wakeLock = getSystemService(PowerManager::class.java)
@@ -135,21 +142,29 @@ class PaceService : Service(), LocationListener {
 
     private fun publish(reading: PaceReading) {
         if (!running) return
-        PaceStateHolder.setReading(reading)
-        val text = notificationText(reading)
+        val target = PaceStateHolder.state.value.targetSecPerKm
+        val decision = cueEngine.update(SystemClock.elapsedRealtime(), reading, target)
+        clickPlayer?.setCue(decision.cue, decision.intervalMs)
+        PaceStateHolder.setReading(reading, decision.cue)
+        val text = notificationText(reading, decision.cue)
         if (text != lastNotificationText) {
             lastNotificationText = text
             notificationManager.notify(NOTIFICATION_ID, buildNotification(text))
         }
     }
 
-    private fun notificationText(reading: PaceReading?): String {
+    private fun notificationText(reading: PaceReading?, cue: Cue): String {
         val target = formatPace(PaceStateHolder.state.value.targetSecPerKm.toDouble())
         val pace = reading?.paceSecPerKm
         return when {
             reading == null || reading.status == GpsStatus.NO_GPS -> "Waiting for GPS… · target $target"
             reading.status == GpsStatus.STOPPED || pace == null -> "Stopped · target $target"
-            else -> "${formatPace(pace)} /km · target $target"
+            else -> "${formatPace(pace)} /km · target $target" + when (cue) {
+                Cue.TOO_SLOW -> " · speed up"
+                Cue.TOO_FAST -> " · ease off"
+                Cue.ON_PACE -> " · on pace"
+                else -> ""
+            }
         }
     }
 
@@ -181,6 +196,8 @@ class PaceService : Service(), LocationListener {
 
     override fun onDestroy() {
         running = false
+        clickPlayer?.release()
+        clickPlayer = null
         handler?.removeCallbacksAndMessages(null)
         locationManager.removeUpdates(this)
         thread?.quitSafely()

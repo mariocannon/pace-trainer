@@ -1,5 +1,6 @@
 package com.mariocannon.pacetrainer.service
 
+import com.mariocannon.pacetrainer.engine.Cue
 import com.mariocannon.pacetrainer.engine.PaceReading
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -9,6 +10,7 @@ data class PaceUiState(
     val running: Boolean = false,
     val targetSecPerKm: Int = 300,
     val reading: PaceReading? = null,
+    val cue: Cue = Cue.SILENT,
 )
 
 /** Shared state between the foreground service and the UI. */
@@ -23,7 +25,9 @@ object PaceStateHolder {
         _state.update { it.copy(targetSecPerKm = secPerKm.coerceIn(MIN_TARGET, MAX_TARGET)) }
 
     fun setRunning(running: Boolean) =
-        _state.update { it.copy(running = running, reading = if (running) it.reading else null) }
+        _state.update {
+            if (running) it.copy(running = true) else it.copy(running = false, reading = null, cue = Cue.SILENT)
+        }
 
-    fun setReading(reading: PaceReading) = _state.update { it.copy(reading = reading) }
+    fun setReading(reading: PaceReading, cue: Cue) = _state.update { it.copy(reading = reading, cue = cue) }
 }
